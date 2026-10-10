@@ -8,7 +8,7 @@ Low-level keyboard hooks crash this machine (see zig-switch/CLAUDE.md). Keys are
 `GetAsyncKeyState`. Keep it that way.
 
 ## Notes
-- The CapsLock hotkey does not stop the toggle flip; `restoreCapsToggle` injects a tap on release and
+- The CapsLock hotkey does not stop the toggle flip. Presses are counted (`caps_presses`, GetKeyState is unreliable here); an odd count gets one injected tap on session end, and
   `caps_restores_pending` makes onHotkey ignore the resulting WM_HOTKEY.
 - The exe is locked while running: kill `keymouse` before `zig build`.
 - Bump `src/version.zig` on changes (shown in the tray menu).

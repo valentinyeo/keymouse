@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
-        .default_target = .{ .os_tag = .windows, .abi = .gnu },
+        .default_target = .{ .cpu_model = .baseline, .os_tag = .windows, .abi = .gnu },
     });
     // Default to ReleaseSmall (Zig 0.16's standardOptimizeOption falls back to
     // Debug without -Drelease, so supply the default ourselves).
@@ -20,6 +20,7 @@ pub fn build(b: *std.Build) void {
     exe.subsystem = .windows;
     exe.root_module.linkSystemLibrary("user32", .{});
     exe.root_module.linkSystemLibrary("kernel32", .{});
+    exe.root_module.linkSystemLibrary("gdi32", .{});
     exe.root_module.linkSystemLibrary("shell32", .{});
     exe.root_module.linkSystemLibrary("advapi32", .{});
     b.installArtifact(exe);

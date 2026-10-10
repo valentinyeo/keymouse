@@ -232,3 +232,81 @@ pub extern "advapi32" fn RegCloseKey(hKey: HKEY) callconv(.winapi) i32;
 pub fn L(comptime s: []const u8) [*:0]const u16 {
     return std.unicode.utf8ToUtf16LeStringLiteral(s);
 }
+
+// ---------------------------------------------------------------- overlay (hint mode)
+
+pub const HDC = *opaque {};
+pub const HFONT = *opaque {};
+pub const HBITMAP = *opaque {};
+pub const HMONITOR = *opaque {};
+pub const COLORREF = DWORD;
+
+pub const RECT = extern struct { left: i32 = 0, top: i32 = 0, right: i32 = 0, bottom: i32 = 0 };
+
+pub const PAINTSTRUCT = extern struct {
+    hdc: ?HDC,
+    fErase: BOOL,
+    rcPaint: RECT,
+    fRestore: BOOL,
+    fIncUpdate: BOOL,
+    rgbReserved: [32]u8,
+};
+
+pub const MONITORINFO = extern struct {
+    cbSize: DWORD = @sizeOf(MONITORINFO),
+    rcMonitor: RECT = .{},
+    rcWork: RECT = .{},
+    dwFlags: DWORD = 0,
+};
+
+pub const WM_ACTIVATE: UINT = 0x0006;
+pub const WM_PAINT: UINT = 0x000F;
+pub const WM_ERASEBKGND: UINT = 0x0014;
+pub const WM_KEYDOWN: UINT = 0x0100;
+pub const WM_SYSKEYDOWN: UINT = 0x0104;
+pub const WS_POPUP: DWORD = 0x80000000;
+pub const WS_EX_TOPMOST: DWORD = 0x00000008;
+pub const WS_EX_TOOLWINDOW: DWORD = 0x00000080;
+pub const WS_EX_LAYERED: DWORD = 0x00080000;
+pub const SW_HIDE: i32 = 0;
+pub const SW_SHOW: i32 = 5;
+pub const LWA_COLORKEY: DWORD = 0x1;
+pub const LWA_ALPHA: DWORD = 0x2;
+pub const MONITOR_DEFAULTTONEAREST: DWORD = 2;
+pub const TRANSPARENT: i32 = 1;
+pub const FW_BOLD: i32 = 700;
+pub const CLEARTYPE_QUALITY: DWORD = 5;
+pub const SRCCOPY: DWORD = 0x00CC0020;
+pub const DT_CENTER: UINT = 0x1;
+pub const DT_VCENTER: UINT = 0x4;
+pub const DT_SINGLELINE: UINT = 0x20;
+pub const DT_NOPREFIX: UINT = 0x800;
+pub const VK_BACK: usize = 0x08;
+pub const VK_ESCAPE: usize = 0x1B;
+
+pub extern "user32" fn ShowWindow(hWnd: HWND, nCmdShow: i32) callconv(.winapi) BOOL;
+pub extern "user32" fn SetWindowPos(hWnd: HWND, hWndInsertAfter: ?HWND, X: i32, Y: i32, cx: i32, cy: i32, uFlags: UINT) callconv(.winapi) BOOL;
+pub extern "user32" fn SetLayeredWindowAttributes(hWnd: HWND, crKey: COLORREF, bAlpha: u8, dwFlags: DWORD) callconv(.winapi) BOOL;
+pub extern "user32" fn SetFocus(hWnd: ?HWND) callconv(.winapi) ?HWND;
+pub extern "user32" fn InvalidateRect(hWnd: ?HWND, lpRect: ?*const RECT, bErase: BOOL) callconv(.winapi) BOOL;
+pub extern "user32" fn BeginPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) callconv(.winapi) ?HDC;
+pub extern "user32" fn EndPaint(hWnd: HWND, lpPaint: *const PAINTSTRUCT) callconv(.winapi) BOOL;
+pub extern "user32" fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) callconv(.winapi) i32;
+pub extern "user32" fn DrawTextW(hdc: HDC, lpchText: [*]const u16, cchText: i32, lprc: *RECT, format: UINT) callconv(.winapi) i32;
+pub extern "user32" fn MonitorFromPoint(pt: POINT, dwFlags: DWORD) callconv(.winapi) ?HMONITOR;
+pub extern "user32" fn GetMonitorInfoW(hMonitor: HMONITOR, lpmi: *MONITORINFO) callconv(.winapi) BOOL;
+
+pub extern "gdi32" fn CreateCompatibleDC(hdc: ?HDC) callconv(.winapi) ?HDC;
+pub extern "gdi32" fn CreateCompatibleBitmap(hdc: HDC, cx: i32, cy: i32) callconv(.winapi) ?HBITMAP;
+pub extern "gdi32" fn SelectObject(hdc: HDC, h: *anyopaque) callconv(.winapi) ?*anyopaque;
+pub extern "gdi32" fn BitBlt(hdc: HDC, x: i32, y: i32, cx: i32, cy: i32, hdcSrc: HDC, x1: i32, y1: i32, rop: DWORD) callconv(.winapi) BOOL;
+pub extern "gdi32" fn DeleteDC(hdc: HDC) callconv(.winapi) BOOL;
+pub extern "gdi32" fn DeleteObject(ho: *anyopaque) callconv(.winapi) BOOL;
+pub extern "gdi32" fn CreateSolidBrush(color: COLORREF) callconv(.winapi) ?HBRUSH;
+pub extern "gdi32" fn CreateFontW(cHeight: i32, cWidth: i32, cEscapement: i32, cOrientation: i32, cWeight: i32, bItalic: DWORD, bUnderline: DWORD, bStrikeOut: DWORD, iCharSet: DWORD, iOutPrecision: DWORD, iClipPrecision: DWORD, iQuality: DWORD, iPitchAndFamily: DWORD, pszFaceName: [*:0]const u16) callconv(.winapi) ?HFONT;
+pub extern "gdi32" fn SetTextColor(hdc: HDC, color: COLORREF) callconv(.winapi) COLORREF;
+pub extern "gdi32" fn SetBkMode(hdc: HDC, mode: i32) callconv(.winapi) i32;
+
+pub fn rgb(r: u8, g: u8, b: u8) COLORREF {
+    return @as(COLORREF, r) | (@as(COLORREF, g) << 8) | (@as(COLORREF, b) << 16);
+}

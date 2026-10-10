@@ -12,6 +12,7 @@
 const std = @import("std");
 const win32 = @import("win32.zig");
 const config = @import("config.zig");
+const hint = @import("hint.zig");
 const version = @import("version.zig").version;
 const L = win32.L;
 
@@ -30,9 +31,10 @@ const Key = struct {
     const SCROLL_UP = 'R';
     const SCROLL_DOWN = 'F';
     const PRECISION = win32.VK_SPACE;
+    const HINT = 'G';
 };
 
-const action_keys = [_]i32{ Key.W, Key.A, Key.S, Key.D, Key.LEFT_CLICK, Key.RIGHT_CLICK, Key.SCROLL_UP, Key.SCROLL_DOWN, Key.PRECISION };
+const action_keys = [_]i32{ Key.W, Key.A, Key.S, Key.D, Key.LEFT_CLICK, Key.RIGHT_CLICK, Key.SCROLL_UP, Key.SCROLL_DOWN, Key.PRECISION, Key.HINT };
 
 const Trigger = enum { none, capslock, shift_enter };
 
@@ -59,11 +61,13 @@ var last_set: win32.POINT = .{ .x = 0, .y = 0 };
 var left_down = false;
 var right_down = false;
 var scroll_wait_s: f32 = 0;
-// The CapsLock hotkey swallows the key, but Windows flips the toggle state
-// before hotkeys are checked. We record it on activation and, if it changed,
-// inject one CapsLock tap on release to flip it back; that injected tap fires
-// our own hotkey once, which this counter tells onHotkey to ignore.
-var caps_toggle_at_start = false;
+var hint_was_down = false;
+// The CapsLock hotkey swallows the key, but Windows still flips the toggle
+// state. Reading that state back (GetKeyState) is unreliable from a thread
+// that never sees the key, so count the presses instead: an odd count at the
+// end of a session means one injected tap restores the original state. That
+// tap fires our own hotkey, which caps_restores_pending tells onHotkey to skip.
+var caps_presses: u32 = 0;
 var caps_restores_pending: u32 = 0;
 
 pub fn main() void {
@@ -94,7 +98,7 @@ pub fn main() void {
 
     var msg: win32.MSG = undefined;
     while (true) {
-        const n: win32.DWORD = if (trigger != .none and timer != null) 1 else 0;
+        const n: win32.DWORD = if (trigger != .none and !hint.isOpen() and timer != null) 1 else 0;
         const handles = [_]win32.HANDLE{timer orelse undefined};
         const r = win32.MsgWaitForMultipleObjects(n, &handles, 0, win32.INFINITE, win32.QS_ALLINPUT);
         if (n == 1 and r == win32.WAIT_OBJECT_0) {
@@ -139,6 +143,8 @@ fn onHotkey(id: i32) void {
                 caps_restores_pending -= 1;
                 return;
             }
+            if (trigger == .none and !paused) caps_presses = 0;
+            caps_presses += 1;
             activate(.capslock);
         },
         HK_SHIFT_ENTER => activate(.shift_enter),
@@ -161,46 +167,71 @@ fn triggerHeld() bool {
 fn activate(t: Trigger) void {
     if (trigger != .none or paused) return;
     trigger = t;
-    caps_toggle_at_start = capsToggled();
-    for (action_keys, 0..) |vk, i| {
-        const idx: i32 = @intCast(i);
-        _ = win32.RegisterHotKey(null, HK_ACTION_BASE + idx, 0, @intCast(vk));
-        _ = win32.RegisterHotKey(null, HK_ACTION_SHIFT_BASE + idx, win32.MOD_SHIFT, @intCast(vk));
-    }
+    startMouseLoop();
+}
+
+fn startMouseLoop() void {
+    registerActionKeys();
     var p: win32.POINT = undefined;
     _ = win32.GetCursorPos(&p);
     syncPos(p);
     move_held_s = 0;
     scroll_wait_s = 0;
+    hint_was_down = down(Key.HINT);
     _ = win32.QueryPerformanceCounter(&last_tick);
     armTimer();
 }
 
-fn deactivate() void {
-    if (trigger == .none) return;
-    const was = trigger;
-    trigger = .none;
+fn registerActionKeys() void {
+    for (action_keys, 0..) |vk, i| {
+        const idx: i32 = @intCast(i);
+        _ = win32.RegisterHotKey(null, HK_ACTION_BASE + idx, 0, @intCast(vk));
+        _ = win32.RegisterHotKey(null, HK_ACTION_SHIFT_BASE + idx, win32.MOD_SHIFT, @intCast(vk));
+    }
+}
+
+fn unregisterActionKeys() void {
     for (0..action_keys.len) |i| {
         const idx: i32 = @intCast(i);
         _ = win32.UnregisterHotKey(null, HK_ACTION_BASE + idx);
         _ = win32.UnregisterHotKey(null, HK_ACTION_SHIFT_BASE + idx);
     }
+}
+
+fn releaseButtons() void {
     // Never leave a button stuck down when the trigger is released mid-drag.
     if (left_down) sendMouse(win32.MOUSEEVENTF_LEFTUP, 0);
     if (right_down) sendMouse(win32.MOUSEEVENTF_RIGHTUP, 0);
     left_down = false;
     right_down = false;
-    if (was == .capslock) restoreCapsToggle();
 }
 
-fn capsToggled() bool {
-    return win32.GetKeyState(win32.VK_CAPITAL) & 1 != 0;
+fn deactivate() void {
+    if (trigger == .none) return;
+    trigger = .none;
+    unregisterActionKeys();
+    releaseButtons();
+    restoreCapsToggle();
+}
+
+// The overlay needs the letter keys, so mouse mode's hotkeys are dropped while
+// it is open. The trigger stays "active" so a new trigger press is ignored.
+fn enterHint() void {
+    unregisterActionKeys();
+    releaseButtons();
+    hint.open(onHintDone);
+    if (!hint.isOpen()) onHintDone();
+}
+
+fn onHintDone() void {
+    if (trigger == .none) return;
+    // Still holding the trigger: continue in mouse mode to fine-tune.
+    if (triggerHeld()) startMouseLoop() else deactivate();
 }
 
 fn restoreCapsToggle() void {
-    // GetKeyState reflects the press that activated us only once our thread has
-    // processed it, which it has by now (we got its WM_HOTKEY).
-    if (capsToggled() == caps_toggle_at_start) return;
+    defer caps_presses = 0;
+    if (caps_presses % 2 == 0) return;
     caps_restores_pending += 1;
     const in = [_]win32.KEYINPUT{
         .{ .ki = .{ .wVk = win32.VK_CAPITAL } },
@@ -266,6 +297,13 @@ fn tick() void {
         move_held_s = 0;
     }
 
+    const hint_down = down(Key.HINT);
+    defer hint_was_down = hint_down;
+    if (hint_down and !hint_was_down) {
+        enterHint();
+        return;
+    }
+
     // Buttons: press on key down, release on key up, so hold = drag.
     button(Key.LEFT_CLICK, &left_down, win32.MOUSEEVENTF_LEFTDOWN, win32.MOUSEEVENTF_LEFTUP);
     button(Key.RIGHT_CLICK, &right_down, win32.MOUSEEVENTF_RIGHTDOWN, win32.MOUSEEVENTF_RIGHTUP);
@@ -327,13 +365,13 @@ fn trayMenu() void {
     const menu = win32.CreatePopupMenu() orelse return;
     defer _ = win32.DestroyMenu(menu);
     const title = comptime L("keymouse v" ++ version);
-    const hint = switch (cfg.activation) {
-        .capslock => L("Hold CapsLock: WASD move, Q/E click, R/F scroll, Space slow"),
+    const usage = switch (cfg.activation) {
+        .capslock => L("Hold CapsLock: WASD move, Q/E click, R/F scroll, Space slow, G hints"),
         .shift_enter => L("Hold Shift+Enter: WASD move, Q/E click, R/F scroll, Space slow"),
         .both => L("Hold CapsLock or Shift+Enter: WASD move, Q/E click, R/F scroll"),
     };
     _ = win32.AppendMenuW(menu, win32.MF_STRING | win32.MF_GRAYED, 0, title);
-    _ = win32.AppendMenuW(menu, win32.MF_STRING | win32.MF_GRAYED, 0, hint);
+    _ = win32.AppendMenuW(menu, win32.MF_STRING | win32.MF_GRAYED, 0, usage);
     _ = win32.AppendMenuW(menu, win32.MF_SEPARATOR, 0, null);
     _ = win32.AppendMenuW(menu, win32.MF_STRING | (if (paused) win32.MF_CHECKED else 0), CMD_PAUSE, L("Paused"));
     _ = win32.AppendMenuW(menu, win32.MF_STRING | (if (autostartEnabled()) win32.MF_CHECKED else 0), CMD_AUTOSTART, L("Start with Windows"));
