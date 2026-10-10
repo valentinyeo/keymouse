@@ -1,10 +1,10 @@
 const std = @import("std");
 const win32 = @import("win32.zig");
 
-pub const Activation = enum { capslock, shift_enter, both };
+pub const Activation = enum { rctrl, ralt, capslock };
 
 pub const Config = struct {
-    activation: Activation = .capslock,
+    activation: Activation = .rctrl,
     /// Cursor speed (physical px/s) when a direction key is first pressed.
     speed_start: f32 = 400,
     /// Cursor speed after `accel_ms` of holding.
@@ -19,10 +19,11 @@ pub const Config = struct {
 const default_ini =
     \\; keymouse config. Restart keymouse (tray > Exit, relaunch) after editing.
     \\;
-    \\; activation: capslock | shift_enter | both
-    \\;   capslock    - hold CapsLock (CapsLock no longer toggles caps)
-    \\;   shift_enter - hold Shift+Enter (WARNING: swallows Shift+Enter in every app)
-    \\activation=capslock
+    \\; activation: rctrl | ralt | capslock
+    \\;   rctrl    - hold Right Ctrl (default)
+    \\;   ralt     - hold Right Alt (avoid where Right Alt is AltGr, e.g. German layout)
+    \\;   capslock - hold CapsLock (toggle state is preserved)
+    \\activation=rctrl
     \\
     \\; cursor speed in physical pixels per second
     \\speed_start=400

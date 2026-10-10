@@ -307,6 +307,70 @@ pub extern "gdi32" fn CreateFontW(cHeight: i32, cWidth: i32, cEscapement: i32, c
 pub extern "gdi32" fn SetTextColor(hdc: HDC, color: COLORREF) callconv(.winapi) COLORREF;
 pub extern "gdi32" fn SetBkMode(hdc: HDC, mode: i32) callconv(.winapi) i32;
 
+// Raw input
+pub const RAWINPUTDEVICE = extern struct {
+    usUsagePage: u16,
+    usUsage: u16,
+    dwFlags: DWORD,
+    hwndTarget: ?HWND,
+};
+pub const RAWINPUTHEADER = extern struct {
+    dwType: DWORD,
+    dwSize: DWORD,
+    hDevice: ?HANDLE,
+    wParam: WPARAM,
+};
+pub const RAWKEYBOARD = extern struct {
+    MakeCode: u16,
+    Flags: u16,
+    Reserved: u16,
+    VKey: u16,
+    Message: UINT,
+    ExtraInformation: u32,
+};
+/// Keyboard-only RAWINPUT, padded to cover the larger mouse/HID variants.
+pub const RAWINPUT = extern struct {
+    header: RAWINPUTHEADER,
+    keyboard: RAWKEYBOARD,
+    _pad: [32]u8 = undefined,
+};
+pub const WM_INPUT: UINT = 0x00FF;
+pub const RIDEV_INPUTSINK: DWORD = 0x100;
+pub const RID_INPUT: UINT = 0x10000003;
+pub const RIM_TYPEKEYBOARD: DWORD = 1;
+pub const RI_KEY_BREAK: u16 = 1;
+pub const RI_KEY_E0: u16 = 2;
+pub const MOD_ALT: UINT = 0x0001;
+pub const MOD_CONTROL: UINT = 0x0002;
+pub const VK_CONTROL: u16 = 0x11;
+pub const VK_MENU: u16 = 0x12;
+pub const VK_RCONTROL: u16 = 0xA3;
+pub const VK_RMENU: u16 = 0xA5;
+pub const KEYEVENTF_EXTENDEDKEY: u32 = 0x0001;
+
+pub extern "user32" fn RegisterRawInputDevices(pRawInputDevices: [*]const RAWINPUTDEVICE, uiNumDevices: UINT, cbSize: UINT) callconv(.winapi) BOOL;
+pub extern "user32" fn GetRawInputData(hRawInput: LPARAM, uiCommand: UINT, pData: ?*anyopaque, pcbSize: *UINT, cbSizeHeader: UINT) callconv(.winapi) UINT;
+
 pub fn rgb(r: u8, g: u8, b: u8) COLORREF {
     return @as(COLORREF, r) | (@as(COLORREF, g) << 8) | (@as(COLORREF, b) << 16);
 }
+
+pub const SIZE = extern struct { cx: i32 = 0, cy: i32 = 0 };
+pub const SM_XVIRTUALSCREEN: i32 = 76;
+pub const SM_YVIRTUALSCREEN: i32 = 77;
+pub const SM_CXVIRTUALSCREEN: i32 = 78;
+pub const SM_CYVIRTUALSCREEN: i32 = 79;
+pub const MONITOR_DEFAULTTONULL: DWORD = 0;
+pub const DC_BRUSH: i32 = 18;
+pub const DC_PEN: i32 = 19;
+
+pub extern "user32" fn GetForegroundWindow() callconv(.winapi) ?HWND;
+pub extern "user32" fn GetDpiForWindow(hwnd: HWND) callconv(.winapi) UINT;
+pub extern "user32" fn GetWindowRect(hWnd: HWND, lpRect: *RECT) callconv(.winapi) BOOL;
+pub extern "user32" fn FindWindowW(lpClassName: ?[*:0]const u16, lpWindowName: ?[*:0]const u16) callconv(.winapi) ?HWND;
+pub extern "user32" fn GetSystemMetrics(nIndex: i32) callconv(.winapi) i32;
+pub extern "gdi32" fn GetStockObject(i: i32) callconv(.winapi) ?*anyopaque;
+pub extern "gdi32" fn SetDCBrushColor(hdc: HDC, color: COLORREF) callconv(.winapi) COLORREF;
+pub extern "gdi32" fn SetDCPenColor(hdc: HDC, color: COLORREF) callconv(.winapi) COLORREF;
+pub extern "gdi32" fn RoundRect(hdc: HDC, left: i32, top: i32, right: i32, bottom: i32, width: i32, height: i32) callconv(.winapi) BOOL;
+pub extern "gdi32" fn GetTextExtentPoint32W(hdc: HDC, lpString: [*]const u16, c: i32, psizl: *SIZE) callconv(.winapi) BOOL;
